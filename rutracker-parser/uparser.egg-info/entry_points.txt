@@ -1,0 +1,3 @@
+[console_scripts]
+uparser=__init__:cli
+
