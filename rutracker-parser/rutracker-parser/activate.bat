@@ -1,0 +1,1 @@
+start C:\\python_homework\\rutracker-parser\\my_env\\Scripts\\activate.bat
