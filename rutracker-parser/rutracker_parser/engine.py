@@ -71,6 +71,21 @@ class ParserFilms(object):
         return result.group(1).strip()
 
     @staticmethod
+    def get_pic_href(html_page):
+        tree = html.fromstring(html_page)
+        href = tree.xpath('//var[@class="postImg postImgAligned img-right"]')
+        if not href:
+            return
+        return href[0].get('title')
+
+    def get_pic_url(self, code):
+        html_page = self.get_html_topic(code)
+        url = ParserFilms.get_pic_href(html_page)
+        if not url:
+            return code, 'https://t3.ftcdn.net/jpg/01/01/89/46/240_F_101894688_RVSZUtDfPR6Cr5eBDQI7Qo5pZ01jmyK3.jpg'
+        return code, url
+
+    @staticmethod
     def get_keys_descriptions_ratings(text):
         """Возвращает словарь {'параметр-ссылка на топик': 'Описание'} - lxml вариант"""
         if not text:
@@ -82,9 +97,19 @@ class ParserFilms(object):
             code = id_topic.get('data-topic_id')
             _description = tree.xpath('//a[@id="tt-' + code + '"]')[0].text_content().strip()
             _rating = tree.xpath('//tr[@data-topic_id="' + code + '"]//p[@title="Торрент скачан"]/b/text()')
+            _seeders = tree.xpath('//tr[@data-topic_id="' + code + '"]//span[@title="Seeders"]/b/text()')
+            _leechers = tree.xpath('//tr[@data-topic_id="' + code + '"]//span[@title="Leechers"]/b/text()')
+            _gb = tree.xpath('//tr[@data-topic_id="' + code + '"]//a[@class="small f-dl dl-stub"]/text()')
             if _rating:
                 _rating = _rating[0].strip().replace(',', '')
-                _temp[code] = [_description, int(_rating)]
+                _params = {
+                    'Description': _description,
+                    'Downloads': int(_rating),
+                    'Seeders': _seeders[0],
+                    'Leechers': _leechers[0],
+                    'GB': _gb[0]
+                }
+                _temp[code] = _params
         return _temp
 
     @staticmethod
@@ -111,3 +136,9 @@ class ParserFilms(object):
         with open(os.path.join(path, 'torrent_files\\' + file_name + '.torrent'), 'bw') as f:
             for chunk in response.iter_content(1024):
                 f.write(chunk)
+
+
+if __name__ == '__main__':
+    parser = ParserFilms()
+    html = parser.get_html_by_url('1950')
+    print(ParserFilms.get_keys_descriptions_ratings(html))

@@ -1,2 +1,0 @@
-recursive-include rutracker_parser/files *
-recursive-include rutracker_parser/torrent_files *

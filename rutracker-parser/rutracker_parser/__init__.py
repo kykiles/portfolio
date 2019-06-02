@@ -3,10 +3,12 @@ from datetime import datetime
 from terminaltables import AsciiTable
 import click
 
-from engine import *
-from jsonworker import *
+from engine import ParserFilms
+from jsonworker import JsonWorker
 from threads import ParserThread
-from actors import ActorsParser
+from pic_url_parser import pic_url_parser
+
+# from actors import ActorsParser
 from config import ConfigWorker
 
 parser = ParserFilms()  # Экземпляр класса ParserFilms
@@ -26,20 +28,28 @@ def test_time(func):
     return wrapper
 
 
-def sort_ratings(data):
+def sort_dict_by_value(data):
     temp = {}
     result = {}
-    for k, v in data.items():
-        temp[v[1]] = k
-    for key in sorted(temp.keys()):
-        result[temp[key]] = [data[temp[key]][0], data[temp[key]][1]]
+    for key, value in data.items():
+        downloads = value.get('Downloads')
+        if downloads in temp:
+            temp[downloads].append(key)
+        else:
+            temp[downloads] = [key,]
+    for key in sorted(temp.keys(), reverse=True):
+        values = temp.get(key)
+        for value in values:
+            result[value] = data.get(value)
     return result
 
 
 def films_echo(result):
+    if not result:
+        return
     data = [
         ('Code', 'Description'),
-        *((k, v[0] + ': ' + str(v[1])) for k, v in result.items())
+        *((k, v['Description']) for k, v in result.items())
     ]
 
     table = AsciiTable(data, title='Список торрент топиков')
@@ -49,19 +59,24 @@ def films_echo(result):
 
 def update_db_in_ram():
     """Загрузка спарсенных данных в ОП"""
-    result = {}
     topics = config.get_ini_dict('Topics').keys()
-
     workers = []
+    data = {}
     for f in topics:
         thread = ParserThread(f, parser)
+        thread.daemon = False
         thread.start()
         workers.append(thread)
     for t in workers:
         t.join()
-        result.update(t.get_result())
-    print(f'Всего раздач: {len(result)}')
-    return result
+        data.update(t.get_result())
+        print('Обновленно')
+
+    new_torrent = JsonWorker.new_torrent_topics(os.path.join(path, 'files\\films_db.json'), data)
+    updated_data = pic_url_parser(data=new_torrent)
+    films_echo(updated_data)
+    JsonWorker.dict_to_json(os.path.join(path, 'files\\new_torrent.json'), updated_data)
+    JsonWorker.update_dict_in_json(os.path.join(path, 'files\\films_db.json'), updated_data)
 
 
 @click.group()
@@ -97,11 +112,21 @@ def get_description(code):
 def update_db():
     # Обновление базы данных фильмов
     click.echo('Обновление базы данных, подождите это займёт несколько минут...')
-    JsonWorker.dict_to_json(os.path.join(path, 'files\\films_db.json'), update_db_in_ram())
-    parser_a = ActorsParser()
-    new_torrents = parser_a.parse_actors()
-    if new_torrents:
-        films_echo(new_torrents)
+
+    # data = main()
+    # print(f'Всего раздач {len(data)}')
+    # JsonWorker.dict_to_json(os.path.join(path, 'files\\films_db.json'), data)
+    # JsonWorker.dict_to_json(os.path.join(path, 'files\\films_db.json'), update_db_in_ram())
+
+    update_db_in_ram()
+    print('Сортировка ...')
+    data = JsonWorker.json_to_dict(os.path.join(path, 'files\\films_db.json'))
+    print('Всего раздач:', len(data), sep=' ')
+    JsonWorker.dict_to_json(os.path.join(path, 'files\\films_db.json'), sort_dict_by_value(data))
+    # parser_a = ActorsParser()
+    # new_torrents = parser_a.parse_actors()
+    # if new_torrents:
+    #     films_echo(new_torrents)
 
 
 @click.command(name='fopen')
@@ -137,7 +162,7 @@ def download_torrent_file(codes, _all):
             if code not in data.keys():
                 print('Фильма с ключом:', code, 'нет в базе данных', sep=' ')
                 return
-            parser.download_torrent_file(code, data.get(code)[0])
+            parser.download_torrent_file(code, data.get(code)['Description'])
 
     JsonWorker.dict_to_json(os.path.join(path, 'files\\temp.json'), None)
     click.echo('Загрузка файлов успешно завершена')
@@ -149,7 +174,6 @@ def download_torrent_file(codes, _all):
 def echo_search_by_keys(keys):
     """Поиск по ключевым словам"""
     result = JsonWorker.search_by(keys)
-    result = sort_ratings(result)  # Сортировка по рейтингу
     if not result:
         return
     films_echo(result)
